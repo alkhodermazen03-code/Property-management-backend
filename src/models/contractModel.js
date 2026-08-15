@@ -4,9 +4,9 @@ const { generatePaymentsForContract } = require('./paymentModel');
 async function getAllContracts() {
     const result = await pool.query(
         `SELECT c.*, 
-                u.unit_number, u.building_id,
-                b.name AS building_name,
-                t.full_name AS tenant_name, t.phone AS tenant_phone
+          u.unit_number, u.building_id,
+          b.name AS building_name,
+          t.full_name AS tenant_name, t.phone AS tenant_phone
          FROM contracts c
          JOIN units u ON c.unit_id = u.unit_id
          JOIN buildings b ON u.building_id = b.building_id
@@ -105,21 +105,19 @@ async function terminateContract(contractId) {
             [contractId]
         );
 
-        if (contractResult.rows[0]) {
-            await client.query(
-                `UPDATE units SET status = 'vacant' WHERE unit_id = $1`,
-                [contractResult.rows[0].unit_id]
-            );
+     if (contractResult.rows[0]) {
+      await client.query(
+       `UPDATE units SET status = 'vacant' WHERE unit_id = $1`,
+         [contractResult.rows[0].unit_id]
+        );
+        await client.query(
+        `DELETE FROM payments WHERE contract_id = $1 AND status = 'pending'`,
+        [contractId]
+        );
+      }
 
-            // بيلغي كل الدفعات المستقبلية يلي لسا pending
-            await client.query(
-                `DELETE FROM payments WHERE contract_id = $1 AND status = 'pending'`,
-                [contractId]
-            );
-        }
-
-        await client.query('COMMIT');
-        return contractResult.rows[0];
+    await client.query('COMMIT');
+    return contractResult.rows[0];
     } catch (err) {
         await client.query('ROLLBACK');
         throw err;
@@ -129,11 +127,30 @@ async function terminateContract(contractId) {
 }
 
 async function deleteContract(contractId) {
-    const result = await pool.query(
-        `DELETE FROM contracts WHERE contract_id = $1 RETURNING *`,
-        [contractId]
+ const client = await pool.connect();
+  try {
+   await client.query('BEGIN');
+
+ const contractResult = await client.query(
+  `DELETE FROM contracts WHERE contract_id = $1 RETURNING *`,
+    [contractId]
+ );
+
+  if (contractResult.rows[0]) {
+    await client.query(
+     `UPDATE units SET status = 'vacant' WHERE unit_id = $1`,
+     [contractResult.rows[0].unit_id]
     );
-    return result.rows[0];
+  }
+
+  await client.query('COMMIT');
+   return contractResult.rows[0];
+    } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+    } finally {
+    client.release();
+    }
 }
 
 module.exports = {
